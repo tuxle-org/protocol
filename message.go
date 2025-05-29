@@ -49,7 +49,7 @@ func (message Message) ensureBodyNotEmpty() error {
 func (message Message) Validate() error {
 	switch message.Type() {
 
-	case M_ERROR:
+	case M_ERR:
 		return errors.Join(
 			message.ensureContainsHeader("subject"),
 			message.ensureBodyNotEmpty(),
@@ -57,6 +57,28 @@ func (message Message) Validate() error {
 
 	case M_MESSAGE:
 		return message.ensureBodyNotEmpty()
+
+	case M_AUTH:
+		err := message.ensureContainsHeader("operation")
+		if err != nil {
+			return err
+		}
+		switch message.Header["operation"] {
+		case AUTH_CREATE:
+		case AUTH_DELETE:
+		case AUTH_LOGIN:
+			return errors.Join(
+				message.ensureContainsHeader("user_id"),
+				message.ensureContainsHeader("password"),
+			)
+		case AUTH_LOGOUT:
+		case AUTH_MODIFY:
+		default:
+			return ErrInvalidHeader{
+				Header: "operation",
+				Value:  message.Header["operation"],
+			}
+		}
 	}
 
 	return nil

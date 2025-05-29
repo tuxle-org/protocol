@@ -156,13 +156,7 @@ func TestMessageValidateError(test *testing.T) {
 	}
 	assert.ErrorType(test, message.Validate(), errors.Join(protocol.ErrMissingHeader{}))
 
-	message = protocol.Message{
-		Header: map[string]string{
-			"type":    "error",
-			"subject": "internal",
-		},
-		Body: "",
-	}
+	message = protocol.NewErrorMessage(protocol.ERR_INTERNAL)
 	assert.ErrorType(test, message.Validate(), errors.Join(protocol.ErrBodyIsEmpty{}))
 
 	message = protocol.Message{

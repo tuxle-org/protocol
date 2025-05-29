@@ -1,6 +1,8 @@
 package protocol
 
-import "fmt"
+import (
+	"fmt"
+)
 
 type ErrReadingHeaderKey struct {
 	Err   error
@@ -58,4 +60,19 @@ type ErrBodyIsEmpty struct{}
 
 func (err ErrBodyIsEmpty) Error() string {
 	return fmt.Sprintf("message body is empty")
+}
+
+// . . . . . . . .
+
+type ErrInvalidHeader struct {
+	Header string
+	Value  string
+}
+
+func (err ErrInvalidHeader) Error() string {
+	return fmt.Sprintf(
+		"message header %q has invalid value of %q",
+		err.Header,
+		err.Value,
+	)
 }
