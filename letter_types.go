@@ -21,8 +21,8 @@ const (
 	AUTH_MODIFY = "modify"
 )
 
-func NewErrorMessage(subject string) Message {
-	return Message{
+func NewErrorLetter(subject string) Letter {
+	return Letter{
 		Header: map[string]string{
 			"type":    M_ERR,
 			"subject": subject,

@@ -59,7 +59,7 @@ func (err ErrMissingHeader) Error() string {
 type ErrBodyIsEmpty struct{}
 
 func (err ErrBodyIsEmpty) Error() string {
-	return fmt.Sprintf("message body is empty")
+	return fmt.Sprintf("letter body is empty")
 }
 
 // . . . . . . . .
@@ -71,7 +71,7 @@ type ErrInvalidHeader struct {
 
 func (err ErrInvalidHeader) Error() string {
 	return fmt.Sprintf(
-		"message header %q has invalid value of %q",
+		"letter header %q has invalid value of %q",
 		err.Header,
 		err.Value,
 	)

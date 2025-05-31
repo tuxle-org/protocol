@@ -8,28 +8,28 @@ import (
 	"sort"
 )
 
-type Message struct {
+type Letter struct {
 	Header map[string]string
 	Body   string
 }
 
-func NewMessage() Message {
-	return Message{
+func NewLetter() Letter {
+	return Letter{
 		Header: map[string]string{},
 		Body:   "",
 	}
 }
 
-func (message Message) Type() string {
-	value, ok := message.Header["type"]
+func (letter Letter) Type() string {
+	value, ok := letter.Header["type"]
 	if !ok {
 		return M_UNSPECIFIED
 	}
 	return value
 }
 
-func (message Message) ensureContainsHeader(header string) error {
-	_, ok := message.Header[header]
+func (letter Letter) ensureContainsHeader(header string) error {
+	_, ok := letter.Header[header]
 	if !ok {
 		return ErrMissingHeader{
 			Header: header,
@@ -38,45 +38,45 @@ func (message Message) ensureContainsHeader(header string) error {
 	return nil
 }
 
-func (message Message) ensureBodyNotEmpty() error {
-	if len(message.Body) == 0 {
+func (letter Letter) ensureBodyNotEmpty() error {
+	if len(letter.Body) == 0 {
 		return ErrBodyIsEmpty{}
 	}
 	return nil
 }
 
-// Ensures that all data is correct for the message type
-func (message Message) Validate() error {
-	switch message.Type() {
+// Ensures that all data is correct for the letter type
+func (letter Letter) Validate() error {
+	switch letter.Type() {
 
 	case M_ERR:
 		return errors.Join(
-			message.ensureContainsHeader("subject"),
-			message.ensureBodyNotEmpty(),
+			letter.ensureContainsHeader("subject"),
+			letter.ensureBodyNotEmpty(),
 		)
 
 	case M_MESSAGE:
-		return message.ensureBodyNotEmpty()
+		return letter.ensureBodyNotEmpty()
 
 	case M_AUTH:
-		err := message.ensureContainsHeader("operation")
+		err := letter.ensureContainsHeader("operation")
 		if err != nil {
 			return err
 		}
-		switch message.Header["operation"] {
+		switch letter.Header["operation"] {
 		case AUTH_CREATE:
 		case AUTH_DELETE:
 		case AUTH_LOGIN:
 			return errors.Join(
-				message.ensureContainsHeader("user_id"),
-				message.ensureContainsHeader("password"),
+				letter.ensureContainsHeader("user_id"),
+				letter.ensureContainsHeader("password"),
 			)
 		case AUTH_LOGOUT:
 		case AUTH_MODIFY:
 		default:
 			return ErrInvalidHeader{
 				Header: "operation",
-				Value:  message.Header["operation"],
+				Value:  letter.Header["operation"],
 			}
 		}
 	}
@@ -87,8 +87,8 @@ func (message Message) Validate() error {
 // Writes the header, all keys are in orbitrary order
 //
 // WARN: Do not use for tests
-func (message Message) WriteHeader(writer io.Writer) error {
-	for key, value := range message.Header {
+func (letter Letter) WriteHeader(writer io.Writer) error {
+	for key, value := range letter.Header {
 		_, err := fmt.Fprintf(writer, "%s=%s\n", key, value)
 		if err != nil {
 			return err
@@ -99,15 +99,15 @@ func (message Message) WriteHeader(writer io.Writer) error {
 }
 
 // Writes the header but with all the keys sorted
-func (message Message) WriteHeaderSorted(writer io.Writer) error {
-	keys := make([]string, 0, len(message.Header))
-	for key := range message.Header {
+func (letter Letter) WriteHeaderSorted(writer io.Writer) error {
+	keys := make([]string, 0, len(letter.Header))
+	for key := range letter.Header {
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
 
 	for _, key := range keys {
-		_, err := fmt.Fprintf(writer, "%s=%s\n", key, message.Header[key])
+		_, err := fmt.Fprintf(writer, "%s=%s\n", key, letter.Header[key])
 		if err != nil {
 			return err
 		}
@@ -116,8 +116,8 @@ func (message Message) WriteHeaderSorted(writer io.Writer) error {
 	return nil
 }
 
-func (message Message) WriteBody(writer io.Writer) error {
-	_, err := fmt.Fprintf(writer, "\n%s\x00", message.Body)
+func (letter Letter) WriteBody(writer io.Writer) error {
+	_, err := fmt.Fprintf(writer, "\n%s\x00", letter.Body)
 	return err
 }
 
@@ -128,8 +128,8 @@ func (message Message) WriteBody(writer io.Writer) error {
 // [headerN]=[valueN]\n
 // \n
 // [body]\x00
-func ReadMessage(reader *bufio.Reader) (Message, error) {
-	message := NewMessage()
+func ReadLetter(reader *bufio.Reader) (Letter, error) {
+	letter := NewLetter()
 	index := 1
 
 	for {
@@ -143,7 +143,7 @@ func ReadMessage(reader *bufio.Reader) (Message, error) {
 		// Read header name until ':'
 		headerKey, err := reader.ReadString('=')
 		if err != nil {
-			return message, ErrReadingHeaderKey{
+			return letter, ErrReadingHeaderKey{
 				Err:   err,
 				Index: index,
 			}
@@ -151,29 +151,29 @@ func ReadMessage(reader *bufio.Reader) (Message, error) {
 
 		headerValue, err := reader.ReadString('\n')
 		if err != nil {
-			return message, ErrReadingHeaderValue{
+			return letter, ErrReadingHeaderValue{
 				Err:   err,
 				Index: index,
 			}
 		}
 
 		if headerKey == "=" {
-			return message, ErrHeaderKeyIsEmpty{
+			return letter, ErrHeaderKeyIsEmpty{
 				Index: index,
 			}
 		}
 
-		message.Header[headerKey[:len(headerKey)-1]] = headerValue[:len(headerValue)-1]
+		letter.Header[headerKey[:len(headerKey)-1]] = headerValue[:len(headerValue)-1]
 		index++
 	}
 
 	body, err := reader.ReadString('\x00')
 	if err != nil {
-		return message, ErrReadingBody{
+		return letter, ErrReadingBody{
 			Err: err,
 		}
 	}
-	message.Body = body[:len(body)-1]
+	letter.Body = body[:len(body)-1]
 
-	return message, nil
+	return letter, nil
 }
