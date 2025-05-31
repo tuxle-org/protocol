@@ -4,34 +4,34 @@ import (
 	"fmt"
 )
 
-type ErrReadingHeaderKey struct {
+type ErrReadingParamKey struct {
 	Err   error
 	Index int
 }
 
-func (err ErrReadingHeaderKey) Error() string {
-	return fmt.Sprintf("reading header:%d key: %s", err.Index, err.Err.Error())
+func (err ErrReadingParamKey) Error() string {
+	return fmt.Sprintf("reading param:%d key: %s", err.Index, err.Err.Error())
 }
 
 // . . . . . . . .
 
-type ErrReadingHeaderValue struct {
+type ErrReadingParamValue struct {
 	Err   error
 	Index int
 }
 
-func (err ErrReadingHeaderValue) Error() string {
-	return fmt.Sprintf("reading header:%d value: %s", err.Index, err.Err.Error())
+func (err ErrReadingParamValue) Error() string {
+	return fmt.Sprintf("reading param:%d value: %s", err.Index, err.Err.Error())
 }
 
 // . . . . . . . .
 
-type ErrHeaderKeyIsEmpty struct {
+type ErrParamKeyIsEmpty struct {
 	Index int
 }
 
-func (err ErrHeaderKeyIsEmpty) Error() string {
-	return fmt.Sprintf("header:%d key is empty", err.Index)
+func (err ErrParamKeyIsEmpty) Error() string {
+	return fmt.Sprintf("param:%d key is empty", err.Index)
 }
 
 // . . . . . . . .
@@ -46,12 +46,12 @@ func (err ErrReadingBody) Error() string {
 
 // . . . . . . . .
 
-type ErrMissingHeader struct {
-	Header string
+type ErrMissingParam struct {
+	Param string
 }
 
-func (err ErrMissingHeader) Error() string {
-	return fmt.Sprintf("missing header: %s", err.Header)
+func (err ErrMissingParam) Error() string {
+	return fmt.Sprintf("missing param: %s", err.Param)
 }
 
 // . . . . . . . .
@@ -64,15 +64,25 @@ func (err ErrBodyIsEmpty) Error() string {
 
 // . . . . . . . .
 
-type ErrInvalidHeader struct {
-	Header string
-	Value  string
+type ErrInvalidVariant struct {
+	Kind  string
+	Value string
 }
 
-func (err ErrInvalidHeader) Error() string {
+func (err ErrInvalidVariant) Error() string {
 	return fmt.Sprintf(
-		"letter header %q has invalid value of %q",
-		err.Header,
+		"letter %q subtype has invalid value of %q",
+		err.Kind,
 		err.Value,
 	)
+}
+
+// . . . . . . . .
+
+type ErrInvalidFormat struct {
+	Err error
+}
+
+func (err ErrInvalidFormat) Error() string {
+	return "provided input is not a valid letter: " + err.Err.Error()
 }

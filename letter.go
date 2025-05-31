@@ -6,33 +6,28 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strings"
 )
 
 type Letter struct {
-	Header map[string]string
+	Kind   LetterKind
+	Params map[string]string
 	Body   string
 }
 
-func NewLetter() Letter {
+func NewLetter(kind LetterKind) Letter {
 	return Letter{
-		Header: map[string]string{},
+		Kind:   kind,
+		Params: map[string]string{},
 		Body:   "",
 	}
 }
 
-func (letter Letter) Type() string {
-	value, ok := letter.Header["type"]
+func (letter Letter) ensureContainsParam(param string) error {
+	_, ok := letter.Params[param]
 	if !ok {
-		return M_UNSPECIFIED
-	}
-	return value
-}
-
-func (letter Letter) ensureContainsHeader(header string) error {
-	_, ok := letter.Header[header]
-	if !ok {
-		return ErrMissingHeader{
-			Header: header,
+		return ErrMissingParam{
+			Param: param,
 		}
 	}
 	return nil
@@ -45,50 +40,104 @@ func (letter Letter) ensureBodyNotEmpty() error {
 	return nil
 }
 
+func (letter Letter) ParseKind(in string) (Letter, error) {
+	parts := strings.Split(in, ".")
+
+	var kind LetterKind
+	switch parts[0] {
+	case "error":
+		if len(parts) != 2 {
+			return letter, errors.New("Missing letter kind variant")
+		}
+		kind = ErrorKind{
+			Value: ErrKindVariant(parts[1]),
+		}
+	case "user":
+		if len(parts) != 2 {
+			return letter, errors.New("Missing letter kind variant")
+		}
+		kind = UserKind{
+			Value: UserKindVariant(parts[1]),
+		}
+	case "reciept":
+		kind = RecieptKind{}
+	case "message":
+		kind = MessageKind{}
+	case "undefined":
+		kind = UndefinedKind{}
+	}
+
+	letter.Kind = kind
+	return letter, nil
+}
+
 // Ensures that all data is correct for the letter type
 func (letter Letter) Validate() error {
-	switch letter.Type() {
+	switch kind := letter.Kind.(type) {
 
-	case M_ERR:
-		return errors.Join(
-			letter.ensureContainsHeader("subject"),
-			letter.ensureBodyNotEmpty(),
-		)
-
-	case M_MESSAGE:
-		return letter.ensureBodyNotEmpty()
-
-	case M_AUTH:
-		err := letter.ensureContainsHeader("operation")
-		if err != nil {
-			return err
-		}
-		switch letter.Header["operation"] {
-		case AUTH_CREATE:
-		case AUTH_DELETE:
-		case AUTH_LOGIN:
-			return errors.Join(
-				letter.ensureContainsHeader("user_id"),
-				letter.ensureContainsHeader("password"),
-			)
-		case AUTH_LOGOUT:
-		case AUTH_MODIFY:
+	case ErrorKind:
+		switch kind.Variant() {
+		case ERR_INTERNAL:
+		case ERR_DENIED:
+		case ERR_REQUEST:
+		case ERR_TIMEOUT:
+		case ERR_CUSTOM:
 		default:
-			return ErrInvalidHeader{
-				Header: "operation",
-				Value:  letter.Header["operation"],
+			return ErrInvalidVariant{
+				Kind:  kind.Kind(),
+				Value: string(kind.Variant()),
 			}
 		}
+		return letter.ensureBodyNotEmpty()
+
+	case MessageKind:
+		return letter.ensureBodyNotEmpty()
+
+	case UserKind:
+		switch kind.Variant() {
+		case USER_CREATE:
+		case USER_DELETE:
+		case USER_LOGIN:
+			return errors.Join(
+				letter.ensureContainsParam("user_id"),
+				letter.ensureContainsParam("password"),
+			)
+		case USER_LOGOUT:
+		case USER_MODIFY:
+		case USER_QUERY:
+		case USER_BAN:
+		case USER_UNBAN:
+		default:
+			return ErrInvalidVariant{
+				Kind:  kind.Kind(),
+				Value: string(kind.Variant()),
+			}
+		}
+
+	case RecieptKind:
+
+	default:
+		return fmt.Errorf("unexpected protocol.LetterKind: %#v", kind)
 	}
 
 	return nil
 }
 
-// Writes the header, all keys are in orbitrary order
+// =error.internal
+// param1=value1
+//
+// body
+
+func (letter Letter) WriteHeader(writer io.Writer) error {
+	_, err := fmt.Fprintf(writer, "=%s\n", letter.Kind.String())
+	return err
+}
+
+// Writes the params, all keys are in orbitrary order
 //
 // WARN: Do not use for tests
-func (letter Letter) WriteHeader(writer io.Writer) error {
-	for key, value := range letter.Header {
+func (letter Letter) WriteParams(writer io.Writer) error {
+	for key, value := range letter.Params {
 		_, err := fmt.Fprintf(writer, "%s=%s\n", key, value)
 		if err != nil {
 			return err
@@ -98,16 +147,16 @@ func (letter Letter) WriteHeader(writer io.Writer) error {
 	return nil
 }
 
-// Writes the header but with all the keys sorted
-func (letter Letter) WriteHeaderSorted(writer io.Writer) error {
-	keys := make([]string, 0, len(letter.Header))
-	for key := range letter.Header {
+// Writes the params but with all the keys sorted
+func (letter Letter) WriteParamsSorted(writer io.Writer) error {
+	keys := make([]string, 0, len(letter.Params))
+	for key := range letter.Params {
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
 
 	for _, key := range keys {
-		_, err := fmt.Fprintf(writer, "%s=%s\n", key, letter.Header[key])
+		_, err := fmt.Fprintf(writer, "%s=%s\n", key, letter.Params[key])
 		if err != nil {
 			return err
 		}
@@ -121,49 +170,72 @@ func (letter Letter) WriteBody(writer io.Writer) error {
 	return err
 }
 
+// Writes the header, params (orbitrary order) and body
+func (letter Letter) Write(writer io.Writer) error {
+	return errors.Join(
+		letter.WriteParams(writer),
+		letter.WriteBody(writer),
+	)
+}
+
 // Format:
 //
-// [header1]=[value1]\n
-// [header2]=[value2]\n
-// [headerN]=[valueN]\n
+// [param1]=[value1]\n
+// [param2]=[value2]\n
+// [paramN]=[valueN]\n
 // \n
 // [body]\x00
 func ReadLetter(reader *bufio.Reader) (Letter, error) {
-	letter := NewLetter()
-	index := 1
+	letter := NewLetter(UndefinedKind{})
 
+	byte, err := reader.ReadByte()
+	if byte != '=' {
+		return letter, ErrInvalidFormat{}
+	}
+
+	header, err := reader.ReadString('\n')
+	if err != nil {
+		return letter, ErrInvalidFormat{Err: err}
+	}
+
+	letter, err = letter.ParseKind(header[:len(header)-1])
+	if err != nil {
+		return letter, ErrInvalidFormat{Err: err}
+	}
+
+	index := 1
 	for {
-		// Check for end-of-headers sequence "\n\n"
+		// Check for end-of-params sequence "\n\n"
 		peek, err := reader.Peek(1)
 		if err == nil && peek[0] == '\n' {
 			reader.Discard(1)
 			break
 		}
 
-		// Read header name until ':'
-		headerKey, err := reader.ReadString('=')
+		// Read param name until ':'
+		paramKey, err := reader.ReadString('=')
 		if err != nil {
-			return letter, ErrReadingHeaderKey{
+			return letter, ErrReadingParamKey{
 				Err:   err,
 				Index: index,
 			}
 		}
 
-		headerValue, err := reader.ReadString('\n')
+		paramValue, err := reader.ReadString('\n')
 		if err != nil {
-			return letter, ErrReadingHeaderValue{
+			return letter, ErrReadingParamValue{
 				Err:   err,
 				Index: index,
 			}
 		}
 
-		if headerKey == "=" {
-			return letter, ErrHeaderKeyIsEmpty{
+		if paramKey == "=" {
+			return letter, ErrParamKeyIsEmpty{
 				Index: index,
 			}
 		}
 
-		letter.Header[headerKey[:len(headerKey)-1]] = headerValue[:len(headerValue)-1]
+		letter.Params[paramKey[:len(paramKey)-1]] = paramValue[:len(paramValue)-1]
 		index++
 	}
 

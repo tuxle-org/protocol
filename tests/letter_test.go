@@ -3,7 +3,6 @@ package protocol_test
 import (
 	"bufio"
 	"bytes"
-	"errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -24,10 +23,11 @@ func TestReadLetter(test *testing.T) {
 		expectMsg protocol.Letter
 	}{
 		{
-			input:     fmt.Sprintf("%s%s%s\n%s\x00", header1, header2, header3, body),
+			input:     fmt.Sprintf("=message\n%s%s%s\n%s\x00", header1, header2, header3, body),
 			expectErr: nil,
 			expectMsg: protocol.Letter{
-				Header: map[string]string{
+				Kind: protocol.MessageKind{},
+				Params: map[string]string{
 					"header_name_1": "some header value 1",
 					"header_name_2": "some header value 2",
 					"header_name_3": "",
@@ -36,30 +36,31 @@ func TestReadLetter(test *testing.T) {
 			},
 		},
 		{
-			input:     fmt.Sprintf("\n%s\x00", body),
+			input:     fmt.Sprintf("=message\n\n%s\x00", body),
 			expectErr: nil,
 			expectMsg: protocol.Letter{
-				Header: map[string]string{},
+				Kind:   protocol.MessageKind{},
+				Params: map[string]string{},
 				Body:   "# Title\nThis is example content of the letter here.",
 			},
 		},
 		{
-			input:     fmt.Sprintf("%s%s%sinvalid_header\n%s\x00", header1, header2, header3, body),
-			expectErr: protocol.ErrReadingHeaderKey{},
+			input:     fmt.Sprintf("=message\n%s%s%sinvalid_header\n%s\x00", header1, header2, header3, body),
+			expectErr: protocol.ErrReadingParamKey{},
 			expectMsg: protocol.Letter{},
 		},
 		{
-			input:     fmt.Sprintf("%s%s%s=empty key name\n%s\x00", header1, header2, header3, body),
-			expectErr: protocol.ErrHeaderKeyIsEmpty{},
+			input:     fmt.Sprintf("=message\n%s%s%s=empty key name\n%s\x00", header1, header2, header3, body),
+			expectErr: protocol.ErrParamKeyIsEmpty{},
 			expectMsg: protocol.Letter{},
 		},
 		{
-			input:     fmt.Sprintf("%s%s%sinvalid_header=", header1, header2, header3),
-			expectErr: protocol.ErrReadingHeaderValue{},
+			input:     fmt.Sprintf("=message\n%s%s%sinvalid_header=", header1, header2, header3),
+			expectErr: protocol.ErrReadingParamValue{},
 			expectMsg: protocol.Letter{},
 		},
 		{
-			input:     fmt.Sprintf("%s%s%s\n%s", header1, header2, header3, body),
+			input:     fmt.Sprintf("=message\n%s%s%s\n%s", header1, header2, header3, body),
 			expectErr: protocol.ErrReadingBody{},
 			expectMsg: protocol.Letter{},
 		},
@@ -94,39 +95,43 @@ func TestLetterWrite(test *testing.T) {
 	}{
 		{
 			input: protocol.Letter{
-				Header: map[string]string{
+				Kind: protocol.MessageKind{},
+				Params: map[string]string{
 					"header_name_1": "some header value 1",
 					"header_name_2": "some header value 2",
 					"header_name_3": "",
 				},
 				Body: body,
 			},
-			expectBuffer: header1 + header2 + header3 + "\n" + body + "\x00",
+			expectBuffer: "=message\n" + header1 + header2 + header3 + "\n" + body + "\x00",
 		},
 		{
 			input: protocol.Letter{
-				Header: map[string]string{},
+				Kind:   protocol.MessageKind{},
+				Params: map[string]string{},
 				Body:   body,
 			},
-			expectBuffer: "\n" + body + "\x00",
+			expectBuffer: "=message\n" + "\n" + body + "\x00",
 		},
 		{
 			input: protocol.Letter{
-				Header: map[string]string{
+				Kind: protocol.MessageKind{},
+				Params: map[string]string{
 					"header_name_1": "some header value 1",
 					"header_name_2": "some header value 2",
 					"header_name_3": "",
 				},
 				Body: "",
 			},
-			expectBuffer: header1 + header2 + header3 + "\n\x00",
+			expectBuffer: "=message\n" + header1 + header2 + header3 + "\n\x00",
 		},
 	}
 
 	for _, testCase := range testCases {
 		test.Run("", func(test *testing.T) {
 			var buffer bytes.Buffer
-			assert.NilError(test, testCase.input.WriteHeaderSorted(&buffer))
+			assert.NilError(test, testCase.input.WriteHeader(&buffer))
+			assert.NilError(test, testCase.input.WriteParamsSorted(&buffer))
 			assert.NilError(test, testCase.input.WriteBody(&buffer))
 			assert.DeepEqual(test, buffer.String(), testCase.expectBuffer)
 		})
@@ -135,7 +140,8 @@ func TestLetterWrite(test *testing.T) {
 
 func TestLetterValidate(test *testing.T) {
 	letter := protocol.Letter{
-		Header: map[string]string{
+		Kind: protocol.MessageKind{},
+		Params: map[string]string{
 			"header_name_1": "some header value 1",
 			"header_name_2": "some header value 2",
 			"header_name_3": "",
@@ -149,30 +155,22 @@ func TestLetterValidateError(test *testing.T) {
 	var letter protocol.Letter
 
 	letter = protocol.Letter{
-		Header: map[string]string{
-			"type": "error",
-		},
-		Body: "123",
+		Kind:   protocol.ErrorKind{},
+		Params: map[string]string{},
+		Body:   "123",
 	}
-	assert.ErrorType(test, letter.Validate(), errors.Join(protocol.ErrMissingHeader{}))
+	assert.ErrorType(test, letter.Validate(), protocol.ErrInvalidVariant{})
 
-	letter = protocol.NewErrorLetter(protocol.ERR_INTERNAL)
-	assert.ErrorType(test, letter.Validate(), errors.Join(protocol.ErrBodyIsEmpty{}))
-
-	letter = protocol.Letter{
-		Header: map[string]string{
-			"type": "error",
-		},
-		Body: "",
-	}
-	assert.ErrorType(test, letter.Validate(), errors.Join(protocol.ErrMissingHeader{}, protocol.ErrBodyIsEmpty{}))
+	letter = protocol.NewLetter(protocol.ErrorKind{Value: protocol.ERR_INTERNAL})
+	assert.ErrorType(test, letter.Validate(), protocol.ErrBodyIsEmpty{})
 }
 
 func TestLetterValidateLetter(test *testing.T) {
 	var letter protocol.Letter
 
 	letter = protocol.Letter{
-		Header: map[string]string{
+		Kind: protocol.MessageKind{},
+		Params: map[string]string{
 			"type": "message",
 		},
 		Body: "",
