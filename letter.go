@@ -173,6 +173,7 @@ func (letter Letter) WriteBody(writer io.Writer) error {
 // Writes the header, params (orbitrary order) and body
 func (letter Letter) Write(writer io.Writer) error {
 	return errors.Join(
+		letter.WriteHeader(writer),
 		letter.WriteParams(writer),
 		letter.WriteBody(writer),
 	)
