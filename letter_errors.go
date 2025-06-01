@@ -84,5 +84,9 @@ type ErrInvalidFormat struct {
 }
 
 func (err ErrInvalidFormat) Error() string {
-	return "provided input is not a valid letter: " + err.Err.Error()
+	out := "provided input is not a valid letter: "
+	if err.Err == nil {
+		return out
+	}
+	return out + err.Err.Error()
 }

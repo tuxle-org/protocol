@@ -7,9 +7,15 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/tuxle-org/protocol"
 	"gotest.tools/assert"
+)
+
+var (
+	TimeUnix = time.Now().UnixMilli()
+	Time     = time.UnixMilli(TimeUnix)
 )
 
 func TestReadLetter(test *testing.T) {
@@ -23,10 +29,18 @@ func TestReadLetter(test *testing.T) {
 		expectMsg protocol.Letter
 	}{
 		{
-			input:     fmt.Sprintf("=message\n%s%s%s\n%s\x00", header1, header2, header3, body),
+			input: fmt.Sprintf(
+				"=message @%d\n%s%s%s\n%s\x00",
+				TimeUnix,
+				header1,
+				header2,
+				header3,
+				body,
+			),
 			expectErr: nil,
 			expectMsg: protocol.Letter{
-				Kind: protocol.MessageKind{},
+				Kind:      protocol.MessageKind{},
+				Timestamp: Time,
 				Params: map[string]string{
 					"header_name_1": "some header value 1",
 					"header_name_2": "some header value 2",
@@ -36,31 +50,32 @@ func TestReadLetter(test *testing.T) {
 			},
 		},
 		{
-			input:     fmt.Sprintf("=message\n\n%s\x00", body),
+			input:     fmt.Sprintf("=message @%d\n\n%s\x00", TimeUnix, body),
 			expectErr: nil,
 			expectMsg: protocol.Letter{
-				Kind:   protocol.MessageKind{},
-				Params: map[string]string{},
-				Body:   "# Title\nThis is example content of the letter here.",
+				Kind:      protocol.MessageKind{},
+				Timestamp: Time,
+				Params:    map[string]string{},
+				Body:      "# Title\nThis is example content of the letter here.",
 			},
 		},
 		{
-			input:     fmt.Sprintf("=message\n%s%s%sinvalid_header\n%s\x00", header1, header2, header3, body),
+			input:     fmt.Sprintf("=message @%d\n%s%s%sinvalid_header\n%s\x00", TimeUnix, header1, header2, header3, body),
 			expectErr: protocol.ErrReadingParamKey{},
 			expectMsg: protocol.Letter{},
 		},
 		{
-			input:     fmt.Sprintf("=message\n%s%s%s=empty key name\n%s\x00", header1, header2, header3, body),
+			input:     fmt.Sprintf("=message @%d\n%s%s%s=empty key name\n%s\x00", TimeUnix, header1, header2, header3, body),
 			expectErr: protocol.ErrParamKeyIsEmpty{},
 			expectMsg: protocol.Letter{},
 		},
 		{
-			input:     fmt.Sprintf("=message\n%s%s%sinvalid_header=", header1, header2, header3),
+			input:     fmt.Sprintf("=message @%d\n%s%s%sinvalid_header=", TimeUnix, header1, header2, header3),
 			expectErr: protocol.ErrReadingParamValue{},
 			expectMsg: protocol.Letter{},
 		},
 		{
-			input:     fmt.Sprintf("=message\n%s%s%s\n%s", header1, header2, header3, body),
+			input:     fmt.Sprintf("=message @%d\n%s%s%s\n%s", TimeUnix, header1, header2, header3, body),
 			expectErr: protocol.ErrReadingBody{},
 			expectMsg: protocol.Letter{},
 		},
@@ -95,7 +110,8 @@ func TestLetterWrite(test *testing.T) {
 	}{
 		{
 			input: protocol.Letter{
-				Kind: protocol.MessageKind{},
+				Kind:      protocol.MessageKind{},
+				Timestamp: Time,
 				Params: map[string]string{
 					"header_name_1": "some header value 1",
 					"header_name_2": "some header value 2",
@@ -103,19 +119,21 @@ func TestLetterWrite(test *testing.T) {
 				},
 				Body: body,
 			},
-			expectBuffer: "=message\n" + header1 + header2 + header3 + "\n" + body + "\x00",
+			expectBuffer: fmt.Sprintf("=message @%d\n%s%s%s\n%s\x00", TimeUnix, header1, header2, header3, body),
 		},
 		{
 			input: protocol.Letter{
-				Kind:   protocol.MessageKind{},
-				Params: map[string]string{},
-				Body:   body,
+				Kind:      protocol.MessageKind{},
+				Timestamp: Time,
+				Params:    map[string]string{},
+				Body:      body,
 			},
-			expectBuffer: "=message\n" + "\n" + body + "\x00",
+			expectBuffer: fmt.Sprintf("=message @%d\n\n%s\x00", TimeUnix, body),
 		},
 		{
 			input: protocol.Letter{
-				Kind: protocol.MessageKind{},
+				Kind:      protocol.MessageKind{},
+				Timestamp: Time,
 				Params: map[string]string{
 					"header_name_1": "some header value 1",
 					"header_name_2": "some header value 2",
@@ -123,7 +141,7 @@ func TestLetterWrite(test *testing.T) {
 				},
 				Body: "",
 			},
-			expectBuffer: "=message\n" + header1 + header2 + header3 + "\n\x00",
+			expectBuffer: fmt.Sprintf("=message @%d\n%s%s%s\n\x00", TimeUnix, header1, header2, header3),
 		},
 	}
 
@@ -140,7 +158,8 @@ func TestLetterWrite(test *testing.T) {
 
 func TestLetterValidate(test *testing.T) {
 	letter := protocol.Letter{
-		Kind: protocol.MessageKind{},
+		Kind:      protocol.MessageKind{},
+		Timestamp: Time,
 		Params: map[string]string{
 			"header_name_1": "some header value 1",
 			"header_name_2": "some header value 2",
@@ -155,9 +174,10 @@ func TestLetterValidateError(test *testing.T) {
 	var letter protocol.Letter
 
 	letter = protocol.Letter{
-		Kind:   protocol.ErrorKind{},
-		Params: map[string]string{},
-		Body:   "123",
+		Kind:      protocol.ErrorKind{},
+		Timestamp: Time,
+		Params:    map[string]string{},
+		Body:      "123",
 	}
 	assert.ErrorType(test, letter.Validate(), protocol.ErrInvalidVariant{})
 
@@ -169,11 +189,10 @@ func TestLetterValidateLetter(test *testing.T) {
 	var letter protocol.Letter
 
 	letter = protocol.Letter{
-		Kind: protocol.MessageKind{},
-		Params: map[string]string{
-			"type": "message",
-		},
-		Body: "",
+		Kind:      protocol.MessageKind{},
+		Timestamp: Time,
+		Params:    map[string]string{},
+		Body:      "",
 	}
 	assert.ErrorType(test, letter.Validate(), protocol.ErrBodyIsEmpty{})
 }

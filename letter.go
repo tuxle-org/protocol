@@ -6,20 +6,24 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strconv"
 	"strings"
+	"time"
 )
 
 type Letter struct {
-	Kind   LetterKind
-	Params map[string]string
-	Body   string
+	Kind      LetterKind
+	Timestamp time.Time
+	Params    map[string]string
+	Body      string
 }
 
 func NewLetter(kind LetterKind) Letter {
 	return Letter{
-		Kind:   kind,
-		Params: map[string]string{},
-		Body:   "",
+		Kind:      kind,
+		Timestamp: time.Time{},
+		Params:    map[string]string{},
+		Body:      "",
 	}
 }
 
@@ -116,6 +120,20 @@ func (letter Letter) Validate() error {
 
 	case RecieptKind:
 
+	case StatusKind:
+		switch kind.Variant() {
+		case STATUS_ENTER:
+			return letter.ensureContainsParam("device")
+		case STATUS_LEAVE:
+		case STATUS_IDLE:
+		case STATUS_DND:
+		default:
+			return ErrInvalidVariant{
+				Kind:  kind.Kind(),
+				Value: string(kind.Variant()),
+			}
+		}
+
 	default:
 		return fmt.Errorf("unexpected protocol.LetterKind: %#v", kind)
 	}
@@ -123,13 +141,13 @@ func (letter Letter) Validate() error {
 	return nil
 }
 
-// =error.internal
-// param1=value1
-//
-// body
-
 func (letter Letter) WriteHeader(writer io.Writer) error {
-	_, err := fmt.Fprintf(writer, "=%s\n", letter.Kind.String())
+	_, err := fmt.Fprintf(
+		writer,
+		"=%s @%d\n",
+		letter.Kind.String(),
+		letter.Timestamp.UnixMilli(),
+	)
 	return err
 }
 
@@ -181,6 +199,7 @@ func (letter Letter) Write(writer io.Writer) error {
 
 // Format:
 //
+// =kind.variant @timestamp
 // [param1]=[value1]\n
 // [param2]=[value2]\n
 // [paramN]=[valueN]\n
@@ -194,7 +213,7 @@ func ReadLetter(reader *bufio.Reader) (Letter, error) {
 		return letter, ErrInvalidFormat{}
 	}
 
-	header, err := reader.ReadString('\n')
+	header, err := reader.ReadString(' ')
 	if err != nil {
 		return letter, ErrInvalidFormat{Err: err}
 	}
@@ -203,6 +222,22 @@ func ReadLetter(reader *bufio.Reader) (Letter, error) {
 	if err != nil {
 		return letter, ErrInvalidFormat{Err: err}
 	}
+
+	byte, err = reader.ReadByte()
+	if byte != '@' {
+		return letter, ErrInvalidFormat{}
+	}
+
+	timestampStr, err := reader.ReadString('\n')
+	if err != nil {
+		return letter, ErrInvalidFormat{Err: err}
+	}
+
+	timestamp, err := strconv.ParseInt(timestampStr[:len(timestampStr)-1], 10, 64)
+	if err != nil {
+		return letter, ErrInvalidFormat{Err: err}
+	}
+	letter.Timestamp = time.UnixMilli(timestamp)
 
 	index := 1
 	for {

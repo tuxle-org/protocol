@@ -90,6 +90,33 @@ func (kind UserKind) String() string {
 
 // . . . . . . . .
 
+type StatusKindVariant string
+
+const (
+	STATUS_ENTER StatusKindVariant = "enter"
+	STATUS_LEAVE StatusKindVariant = "leave"
+	STATUS_IDLE  StatusKindVariant = "idle"
+	STATUS_DND   StatusKindVariant = "do_not_disturb"
+)
+
+type StatusKind struct {
+	Value StatusKindVariant
+}
+
+func (kind StatusKind) Kind() string {
+	return "status"
+}
+
+func (kind StatusKind) Variant() StatusKindVariant {
+	return kind.Value
+}
+
+func (kind StatusKind) String() string {
+	return kind.Kind() + string(kind.Variant())
+}
+
+// . . . . . . . .
+
 type UndefinedKind struct{}
 
 func (kind UndefinedKind) Kind() string {
