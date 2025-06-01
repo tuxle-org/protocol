@@ -188,8 +188,12 @@ func (letter Letter) WriteBody(writer io.Writer) error {
 	return err
 }
 
-// Writes the header, params (orbitrary order) and body
-func (letter Letter) Write(writer io.Writer) error {
+// Sets the letter timestamp, validates & writes the header, params (orbitrary order) and body to [writer]
+func (letter Letter) Send(writer io.Writer) error {
+	letter.Timestamp = time.Now()
+	if err := letter.Validate(); err != nil {
+		return fmt.Errorf("validation: %w", err)
+	}
 	return errors.Join(
 		letter.WriteHeader(writer),
 		letter.WriteParams(writer),
